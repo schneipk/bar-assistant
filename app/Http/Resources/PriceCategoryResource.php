@@ -19,8 +19,11 @@ use Illuminate\Http\Resources\Json\JsonResource;
         new OAT\Property(type: 'string', nullable: true, example: 'Current price on amazon.de', property: 'description'),
         new OAT\Property(type: 'string', example: 'EUR', format: 'ISO 4217', property: 'currency'),
         new OAT\Property(type: 'string', example: '€', property: 'currency_symbol'),
+        new OAT\Property(type: 'boolean', example: false, property: 'is_base_category'),
+        new OAT\Property(type: 'string', nullable: true, example: 'external-json', property: 'suggestion_provider'),
+        new OAT\Property(property: 'suggestion_config', type: 'object', nullable: true),
     ],
-    required: ['id', 'name', 'description', 'currency']
+    required: ['id', 'name', 'description', 'currency', 'is_base_category']
 )]
 class PriceCategoryResource extends JsonResource
 {
@@ -39,6 +42,9 @@ class PriceCategoryResource extends JsonResource
             'description' => $this->description,
             'currency' => $this->currency,
             'currency_symbol' => '',
+            'is_base_category' => (bool) $this->is_base_category,
+            'suggestion_provider' => $this->suggestion_provider,
+            'suggestion_config' => $this->suggestion_config,
         ];
     }
 }

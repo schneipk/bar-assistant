@@ -10,7 +10,9 @@ use Kami\Cocktail\Models\Bar;
 use Kami\Cocktail\Models\User;
 use Kami\Cocktail\Models\Cocktail;
 use Kami\Cocktail\Models\Ingredient;
+use Kami\Cocktail\Models\PriceCategory;
 use Kami\Cocktail\Models\BarIngredient;
+use Kami\Cocktail\Models\IngredientPrice;
 use Kami\Cocktail\Models\UserIngredient;
 use Kami\Cocktail\Models\UserShoppingList;
 use Kami\Cocktail\Models\CocktailIngredient;
@@ -303,6 +305,45 @@ class IngredientControllerTest extends TestCase
                 ->where('data.description', 'Description text')
                 ->etc()
         );
+    }
+
+    public function test_ingredient_update_removes_existing_prices_when_empty_list_is_submitted(): void
+    {
+        $bar = $this->setupBar();
+        $priceCategory = PriceCategory::factory()->create([
+            'bar_id' => $bar->id,
+            'currency' => 'EUR',
+        ]);
+
+        $ingredient = Ingredient::factory()
+            ->state([
+                'name' => 'Test ingredient',
+                'bar_id' => $bar->id,
+                'created_user_id' => auth()->user()->id,
+            ])
+            ->create();
+
+        IngredientPrice::factory()->for($ingredient)->for($priceCategory)->create([
+            'price' => 1850,
+            'amount' => 700,
+            'units' => 'ml',
+        ]);
+
+        $response = $this->putJson('/api/ingredients/' . $ingredient->id, [
+            'name' => 'Test ingredient',
+            'strength' => 0,
+            'description' => 'Test',
+            'origin' => null,
+            'color' => null,
+            'parent_ingredient_id' => null,
+            'prices' => [],
+        ]);
+
+        $response->assertSuccessful();
+        $this->assertDatabaseMissing('ingredient_prices', [
+            'ingredient_id' => $ingredient->id,
+            'price_category_id' => $priceCategory->id,
+        ]);
     }
 
     public function test_ingredient_update_fails_validation_response(): void

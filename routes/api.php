@@ -37,6 +37,7 @@ use Kami\Cocktail\Http\Controllers\PriceCategoryController;
 use Kami\Cocktail\Http\Middleware\EnsureRequestHasBarQuery;
 use Kami\Cocktail\Http\Controllers\CocktailMethodController;
 use Kami\Cocktail\Http\Middleware\AiImageProviderIsConfigured;
+use Kami\Cocktail\Http\Controllers\IngredientPriceSuggestionController;
 
 /*
 |--------------------------------------------------------------------------
@@ -119,6 +120,14 @@ Route::middleware($apiMiddleware)->group(function () {
         Route::get('/{idOrSlug}/cocktails', [IngredientController::class, 'cocktails'])->middleware(['ability:ingredients.read']);
         Route::get('/{idOrSlug}/substitutes', [IngredientController::class, 'substitutes'])->middleware(['ability:ingredients.read']);
         Route::get('/{idOrSlug}/tree', [IngredientController::class, 'tree'])->middleware(['ability:ingredients.read']);
+        Route::get('/{idOrSlug}/price-suggestions', [IngredientPriceSuggestionController::class, 'index'])->middleware(['ability:ingredients.read']);
+        Route::post('/{idOrSlug}/price-suggestions/refresh', [IngredientPriceSuggestionController::class, 'refresh'])->middleware(['ability:ingredients.write']);
+    });
+
+    Route::prefix('ingredient-price-suggestions')->group(function () {
+        Route::post('/{id}/accept', [IngredientPriceSuggestionController::class, 'accept'])->middleware(['ability:ingredients.write']);
+        Route::post('/{id}/create-variant', [IngredientPriceSuggestionController::class, 'createVariant'])->middleware(['ability:ingredients.write']);
+        Route::delete('/{id}', [IngredientPriceSuggestionController::class, 'delete'])->middleware(['ability:ingredients.write']);
     });
 
     Route::prefix('cocktails')->group(function () {

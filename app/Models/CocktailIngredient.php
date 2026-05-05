@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Kami\Cocktail\Models\ValueObjects\UnitValueObject;
 use Kami\Cocktail\Models\ValueObjects\AmountValueObject;
+use Kami\Cocktail\Models\ValueObjects\ResolvedIngredientPrice;
 
 class CocktailIngredient extends Model
 {
@@ -93,18 +94,16 @@ class CocktailIngredient extends Model
      */
     public function getConvertedPricePerUse(PriceCategory $priceCategory): ?RationalMoney
     {
-        // Price already converted to cocktail ingredient units
-        $ingredientPrice = $this->getMinConvertedPriceInCategory($priceCategory);
+        $resolvedPrice = $this->resolvePrice($priceCategory);
 
-        if ($ingredientPrice === null) {
+        if ($resolvedPrice === null) {
             return null;
         }
 
-        // Convert current ingredient amount to price units
-        $convertedLocalAmount = $this->getAmount()->convertTo(new UnitValueObject($ingredientPrice->units));
+        $convertedLocalAmount = $resolvedPrice->amount->convertTo(new UnitValueObject($resolvedPrice->ingredientPrice->units));
 
         try {
-            $pricePerUse = $ingredientPrice->getPricePerUnit()->multipliedBy($convertedLocalAmount->amountMin);
+            $pricePerUse = $resolvedPrice->ingredientPrice->getPricePerUnit()->multipliedBy($convertedLocalAmount->amountMin);
         } catch (\Throwable) {
             return null;
         }
@@ -118,12 +117,183 @@ class CocktailIngredient extends Model
 
     public function getMinConvertedPriceInCategory(PriceCategory $priceCategory): ?IngredientPrice
     {
-        return $this
-            ->ingredient
-            ->getPricesWithConvertedUnits($this->units)
+        return $this->resolvePrice($priceCategory)?->ingredientPrice;
+    }
+
+    public function resolvePrice(PriceCategory $priceCategory): ?ResolvedIngredientPrice
+    {
+        foreach ($this->getPriceCandidates($priceCategory) as $candidate) {
+            $resolvedPrice = $this->resolvePriceForIngredient(
+                $candidate['ingredient'],
+                $candidate['amount'],
+                $candidate['categories'],
+                $candidate['source'],
+            );
+
+            if ($resolvedPrice !== null) {
+                return $resolvedPrice;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<int, array{ingredient: Ingredient, amount: AmountValueObject, categories: array<int, PriceCategory>, source: string}>
+     */
+    private function getPriceCandidates(PriceCategory $priceCategory): array
+    {
+        $baseCategories = $this->getBasePriceCategories($priceCategory);
+        $variants = $this->ingredient->children;
+        $variantsInShelf = $variants->filter(fn (Ingredient $variant) => $variant->barHasInShelf());
+        $remainingVariants = $variants->reject(fn (Ingredient $variant) => $variant->barHasInShelf());
+        $substitutes = $this->substitutes;
+        $substitutesInShelf = $substitutes->filter(fn (CocktailIngredientSubstitute $substitute) => $substitute->barHasInShelf());
+        $remainingSubstitutes = $substitutes->reject(fn (CocktailIngredientSubstitute $substitute) => $substitute->barHasInShelf());
+        $candidates = [];
+
+        if (!$this->ingredient->barHasInShelf()) {
+            foreach ($variantsInShelf as $variant) {
+                $candidates[] = [
+                    'ingredient' => $variant,
+                    'amount' => $this->getAmount(),
+                    'categories' => [$priceCategory],
+                    'source' => 'variant',
+                ];
+            }
+
+            foreach ($variantsInShelf as $variant) {
+                $candidates[] = [
+                    'ingredient' => $variant,
+                    'amount' => $this->getAmount(),
+                    'categories' => $baseCategories,
+                    'source' => 'variant_base_category',
+                ];
+            }
+
+            foreach ($substitutesInShelf as $substitute) {
+                $candidates[] = [
+                    'ingredient' => $substitute->ingredient,
+                    'amount' => $this->getAmountForSubstitute($substitute),
+                    'categories' => [$priceCategory],
+                    'source' => 'substitute',
+                ];
+            }
+
+            foreach ($substitutesInShelf as $substitute) {
+                $candidates[] = [
+                    'ingredient' => $substitute->ingredient,
+                    'amount' => $this->getAmountForSubstitute($substitute),
+                    'categories' => $baseCategories,
+                    'source' => 'substitute_base_category',
+                ];
+            }
+        }
+
+        $candidates[] = [
+            'ingredient' => $this->ingredient,
+            'amount' => $this->getAmount(),
+            'categories' => [$priceCategory],
+            'source' => 'original',
+        ];
+
+        $candidates[] = [
+            'ingredient' => $this->ingredient,
+            'amount' => $this->getAmount(),
+            'categories' => $baseCategories,
+            'source' => 'base_category',
+        ];
+
+        foreach ($remainingVariants as $variant) {
+            $candidates[] = [
+                'ingredient' => $variant,
+                'amount' => $this->getAmount(),
+                'categories' => [$priceCategory],
+                'source' => 'variant',
+            ];
+        }
+
+        foreach ($remainingVariants as $variant) {
+            $candidates[] = [
+                'ingredient' => $variant,
+                'amount' => $this->getAmount(),
+                'categories' => $baseCategories,
+                'source' => 'variant_base_category',
+            ];
+        }
+
+        foreach ($remainingSubstitutes as $substitute) {
+            $candidates[] = [
+                'ingredient' => $substitute->ingredient,
+                'amount' => $this->getAmountForSubstitute($substitute),
+                'categories' => [$priceCategory],
+                'source' => 'substitute',
+            ];
+        }
+
+        foreach ($remainingSubstitutes as $substitute) {
+            $candidates[] = [
+                'ingredient' => $substitute->ingredient,
+                'amount' => $this->getAmountForSubstitute($substitute),
+                'categories' => $baseCategories,
+                'source' => 'substitute_base_category',
+            ];
+        }
+
+        return $candidates;
+    }
+
+    /**
+     * @param array<int, PriceCategory> $categories
+     */
+    private function resolvePriceForIngredient(Ingredient $ingredient, AmountValueObject $amount, array $categories, string $source): ?ResolvedIngredientPrice
+    {
+        foreach ($categories as $category) {
+            $ingredientPrice = $this->findMinPriceForIngredientInCategory($ingredient, $amount, $category);
+
+            if ($ingredientPrice !== null) {
+                return new ResolvedIngredientPrice($ingredient, $ingredientPrice, $amount, $source);
+            }
+        }
+
+        return null;
+    }
+
+    private function findMinPriceForIngredientInCategory(Ingredient $ingredient, AmountValueObject $amount, PriceCategory $priceCategory): ?IngredientPrice
+    {
+        return $ingredient
+            ->getPricesWithConvertedUnits($amount->units->value)
             ->sortBy('price')
             ->where('price_category_id', $priceCategory->id)
-            ->where('units', $this->units)
+            ->where('units', $amount->units->value)
             ->first();
+    }
+
+    /**
+     * @return array<int, PriceCategory>
+     */
+    private function getBasePriceCategories(PriceCategory $priceCategory): array
+    {
+        return PriceCategory::query()
+            ->where('bar_id', $priceCategory->bar_id)
+            ->where('currency', $priceCategory->currency)
+            ->where('is_base_category', true)
+            ->where('id', '!=', $priceCategory->id)
+            ->orderBy('name')
+            ->get()
+            ->all();
+    }
+
+    private function getAmountForSubstitute(CocktailIngredientSubstitute $substitute): AmountValueObject
+    {
+        if ($substitute->amount !== null && $substitute->units !== null) {
+            return new AmountValueObject(
+                $substitute->amount,
+                new UnitValueObject($substitute->units),
+                $substitute->amount_max,
+            );
+        }
+
+        return $this->getAmount();
     }
 }

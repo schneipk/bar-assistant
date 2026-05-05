@@ -36,6 +36,7 @@ class BarRequest extends FormRequest
                 'nullable',
             ],
             'default_units' => 'string',
+            'target_pour_cost' => 'numeric|min:0.01|max:100',
             'default_lang' => 'string',
             'status' => [
                 Rule::enum(BarStatusEnum::class),

@@ -57,6 +57,9 @@ class PriceCategoryControllerTest extends TestCase
                 ->where('data.description', $cat->description)
                 ->where('data.currency', $cat->currency)
                 ->where('data.currency_symbol', '')
+                ->where('data.is_base_category', false)
+                ->where('data.suggestion_provider', null)
+                ->where('data.suggestion_config', null)
                 ->etc()
         );
     }
@@ -67,6 +70,12 @@ class PriceCategoryControllerTest extends TestCase
             'name' => 'Test cat',
             'description' => 'Test cat desc',
             'currency' => 'USD',
+            'is_base_category' => true,
+            'suggestion_provider' => 'external-json',
+            'suggestion_config' => [
+                'url_template' => 'https://example.com/search?q={query}',
+                'price_path' => 'price',
+            ],
         ], ['Bar-Assistant-Bar-Id' => $this->barMembership->bar_id]);
 
         $response->assertCreated();
@@ -80,6 +89,64 @@ class PriceCategoryControllerTest extends TestCase
                 ->where('data.description', 'Test cat desc')
                 ->where('data.currency', 'USD')
                 ->where('data.currency_symbol', '')
+                ->where('data.is_base_category', true)
+                ->where('data.suggestion_provider', 'external-json')
+                ->where('data.suggestion_config.url_template', 'https://example.com/search?q={query}')
+                ->where('data.suggestion_config.price_path', 'price')
+                ->etc()
+        );
+    }
+
+    public function test_create_price_category_response_with_rumundco_provider_form_payload(): void
+    {
+        $response = $this->postJson('/api/price-categories', [
+            'name' => 'Rum&Co',
+            'description' => 'Rum search',
+            'currency' => 'EUR',
+            'suggestion_provider' => 'rumundco-search',
+            'suggestion_config' => [
+                'url_template' => 'https://www.rumundco.de/search?search={query}',
+                'skip_non_alcoholic' => true,
+                'refine_with_strength_above_results' => 12,
+                'price_path' => null,
+            ],
+        ], ['Bar-Assistant-Bar-Id' => $this->barMembership->bar_id]);
+
+        $response->assertCreated();
+        $response->assertJson(
+            fn (AssertableJson $json) =>
+            $json
+                ->where('data.name', 'Rum&Co')
+                ->where('data.suggestion_provider', 'rumundco-search')
+                ->where('data.suggestion_config.url_template', 'https://www.rumundco.de/search?search={query}')
+                ->where('data.suggestion_config.skip_non_alcoholic', true)
+                ->where('data.suggestion_config.refine_with_strength_above_results', 12)
+                ->etc()
+        );
+    }
+
+    public function test_create_price_category_response_with_amazon_provider_form_payload(): void
+    {
+        $response = $this->postJson('/api/price-categories', [
+            'name' => 'Amazon',
+            'description' => 'Amazon search',
+            'currency' => 'EUR',
+            'suggestion_provider' => 'amazon-search',
+            'suggestion_config' => [
+                'url_template' => 'https://www.amazon.de/s?k={query}',
+                'refine_with_strength_above_results' => 12,
+                'price_path' => null,
+            ],
+        ], ['Bar-Assistant-Bar-Id' => $this->barMembership->bar_id]);
+
+        $response->assertCreated();
+        $response->assertJson(
+            fn (AssertableJson $json) =>
+            $json
+                ->where('data.name', 'Amazon')
+                ->where('data.suggestion_provider', 'amazon-search')
+                ->where('data.suggestion_config.url_template', 'https://www.amazon.de/s?k={query}')
+                ->where('data.suggestion_config.refine_with_strength_above_results', 12)
                 ->etc()
         );
     }
@@ -92,6 +159,14 @@ class PriceCategoryControllerTest extends TestCase
             'name' => 'Test cat',
             'description' => 'Test cat desc',
             'currency' => 'JPY',
+            'is_base_category' => true,
+            'suggestion_provider' => 'external-json',
+            'suggestion_config' => [
+                'url_template' => 'https://example.com/api?q={query}',
+                'items_path' => 'items',
+                'price_path' => 'price.value',
+                'name_path' => 'name',
+            ],
         ]);
 
         $response->assertSuccessful();
@@ -104,6 +179,10 @@ class PriceCategoryControllerTest extends TestCase
                 ->where('data.description', 'Test cat desc')
                 ->where('data.currency', 'JPY')
                 ->where('data.currency_symbol', '')
+                ->where('data.is_base_category', true)
+                ->where('data.suggestion_provider', 'external-json')
+                ->where('data.suggestion_config.items_path', 'items')
+                ->where('data.suggestion_config.price_path', 'price.value')
                 ->etc()
         );
     }

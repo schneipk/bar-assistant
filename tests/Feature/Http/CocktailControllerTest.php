@@ -19,6 +19,7 @@ use Kami\Cocktail\Models\Ingredient;
 use Illuminate\Support\Facades\Config;
 use Kami\Cocktail\Models\MenuCocktail;
 use Illuminate\Support\Facades\Storage;
+use Kami\Cocktail\Models\BarIngredient;
 use Kami\Cocktail\Models\PriceCategory;
 use Kami\Cocktail\Models\CocktailMethod;
 use Kami\Cocktail\Models\IngredientPrice;
@@ -26,6 +27,7 @@ use Kami\Cocktail\Models\CocktailFavorite;
 use Kami\Cocktail\Models\CocktailIngredient;
 use Illuminate\Testing\Fluent\AssertableJson;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Kami\Cocktail\Models\CocktailIngredientSubstitute;
 
 class CocktailControllerTest extends TestCase
 {
@@ -810,11 +812,140 @@ class CocktailControllerTest extends TestCase
         $response->assertStatus(200);
         $response->assertJsonPath('data.0.prices_per_ingredient.0.price_per_unit.price', 0.02);
         $response->assertJsonPath('data.0.prices_per_ingredient.0.price_per_use.price', 0.8);
+        $response->assertJsonPath('data.0.prices_per_ingredient.0.price_source', 'original');
         $response->assertJsonPath('data.0.prices_per_ingredient.1.price_per_unit.price', 0.8);
         $response->assertJsonPath('data.0.prices_per_ingredient.1.price_per_use.price', 0.8);
         $response->assertJsonPath('data.0.prices_per_ingredient.2.price_per_unit.price', 0.8);
         $response->assertJsonPath('data.0.prices_per_ingredient.2.price_per_use.price', 0.4);
         $response->assertJsonPath('data.0.total_price.price', 2);
+    }
+
+    public function test_cocktail_prices_uses_substitute_when_original_missing_from_bar_shelf(): void
+    {
+        $membership = $this->setupBarMembership();
+        $this->actingAs($membership->user);
+
+        $priceCategory = PriceCategory::factory()->for($membership->bar)->create([
+            'currency' => 'USD',
+        ]);
+
+        $ingredient = Ingredient::factory()->for($membership->bar)->create(['name' => 'Gin']);
+        IngredientPrice::factory()->for($ingredient)->for($priceCategory)->create([
+            'price' => 2000,
+            'amount' => 750,
+            'units' => 'ml',
+        ]);
+
+        $substitute = Ingredient::factory()->for($membership->bar)->create(['name' => 'Dry Gin']);
+        IngredientPrice::factory()->for($substitute)->for($priceCategory)->create([
+            'price' => 1000,
+            'amount' => 750,
+            'units' => 'ml',
+        ]);
+
+        BarIngredient::factory()->for($membership->bar)->for($substitute)->create();
+
+        $cocktail = Cocktail::factory()->for($membership->bar)->create();
+        $cocktailIngredient = CocktailIngredient::factory()->for($cocktail)->for($ingredient)->create([
+            'amount' => 30,
+            'amount_max' => null,
+            'units' => 'ml',
+            'optional' => false,
+        ]);
+        $substituteModel = new CocktailIngredientSubstitute();
+        $substituteModel->ingredient_id = $substitute->id;
+        $cocktailIngredient->substitutes()->save($substituteModel);
+
+        $response = $this->getJson('/api/cocktails/' . $cocktail->id . '/prices');
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('data.0.prices_per_ingredient.0.ingredient.id', $ingredient->id);
+        $response->assertJsonPath('data.0.prices_per_ingredient.0.priced_ingredient.id', $substitute->id);
+        $response->assertJsonPath('data.0.prices_per_ingredient.0.price_source', 'substitute');
+        $response->assertJsonPath('data.0.prices_per_ingredient.0.price_per_use.price', 0.4);
+        $response->assertJsonPath('data.0.total_price.price', 0.4);
+    }
+
+    public function test_cocktail_prices_fall_back_to_base_category(): void
+    {
+        $membership = $this->setupBarMembership();
+        $this->actingAs($membership->user);
+
+        $priceCategory = PriceCategory::factory()->for($membership->bar)->create([
+            'name' => 'Amazon',
+            'currency' => 'USD',
+            'is_base_category' => false,
+        ]);
+        $basePriceCategory = PriceCategory::factory()->for($membership->bar)->create([
+            'name' => 'Base price',
+            'currency' => 'USD',
+            'is_base_category' => true,
+        ]);
+
+        $ingredient = Ingredient::factory()->for($membership->bar)->create();
+        IngredientPrice::factory()->for($ingredient)->for($basePriceCategory)->create([
+            'price' => 1500,
+            'amount' => 750,
+            'units' => 'ml',
+        ]);
+
+        $cocktail = Cocktail::factory()->for($membership->bar)->create();
+        CocktailIngredient::factory()->for($cocktail)->for($ingredient)->create([
+            'amount' => 30,
+            'amount_max' => null,
+            'units' => 'ml',
+            'optional' => false,
+        ]);
+
+        $response = $this->getJson('/api/cocktails/' . $cocktail->id . '/prices');
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('data.0.prices_per_ingredient.0.price_source', 'base_category');
+        $response->assertJsonPath('data.0.prices_per_ingredient.0.price_per_use.price', 0.6);
+        $response->assertJsonPath('data.0.total_price.price', 0.6);
+    }
+
+    public function test_cocktail_prices_use_variant_when_original_has_no_price(): void
+    {
+        $membership = $this->setupBarMembership();
+        $this->actingAs($membership->user);
+
+        $priceCategory = PriceCategory::factory()->for($membership->bar)->create([
+            'currency' => 'EUR',
+        ]);
+
+        $ingredient = Ingredient::factory()->for($membership->bar)->create([
+            'name' => 'Amaretto Likör',
+        ]);
+
+        $variant = Ingredient::factory()->for($membership->bar)->create([
+            'name' => 'Disaronno Amaretto',
+            'parent_ingredient_id' => $ingredient->id,
+        ]);
+
+        IngredientPrice::factory()->for($variant)->for($priceCategory)->create([
+            'price' => 1850,
+            'amount' => 700,
+            'units' => 'ml',
+        ]);
+
+        BarIngredient::factory()->for($membership->bar)->for($variant)->create();
+
+        $cocktail = Cocktail::factory()->for($membership->bar)->create();
+        CocktailIngredient::factory()->for($cocktail)->for($ingredient)->create([
+            'amount' => 30,
+            'amount_max' => null,
+            'units' => 'ml',
+            'optional' => false,
+        ]);
+
+        $response = $this->getJson('/api/cocktails/' . $cocktail->id . '/prices');
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('data.0.prices_per_ingredient.0.ingredient.id', $ingredient->id);
+        $response->assertJsonPath('data.0.prices_per_ingredient.0.priced_ingredient.id', $variant->id);
+        $response->assertJsonPath('data.0.prices_per_ingredient.0.price_source', 'variant');
+        $response->assertJsonPath('data.0.prices_per_ingredient.0.price_per_use.price', 0.79);
     }
 
     public function test_max_images_validation(): void

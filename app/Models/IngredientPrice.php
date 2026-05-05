@@ -17,6 +17,15 @@ class IngredientPrice extends Model
     /** @use \Illuminate\Database\Eloquent\Factories\HasFactory<\Database\Factories\IngredientPriceFactory> */
     use HasFactory;
 
+    protected $fillable = [
+        'price_category_id',
+        'ingredient_id',
+        'price',
+        'amount',
+        'units',
+        'description',
+    ];
+
     /**
      * @return BelongsTo<Ingredient, $this>
      */

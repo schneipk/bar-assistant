@@ -20,6 +20,9 @@ class PriceCategoryFactory extends Factory
             'name' => fake()->sentence(3),
             'description' => fake()->paragraph(),
             'currency' => fake()->currencyCode(),
+            'is_base_category' => false,
+            'suggestion_provider' => null,
+            'suggestion_config' => null,
             'bar_id' => \Kami\Cocktail\Models\Bar::factory(),
         ];
     }

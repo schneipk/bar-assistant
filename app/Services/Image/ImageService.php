@@ -9,6 +9,7 @@ use Illuminate\Support\Str;
 use Psr\Log\LoggerInterface;
 use Kami\Cocktail\Models\Bar;
 use Kami\Cocktail\Models\Image;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Container\Attributes\Storage;
 use Illuminate\Contracts\Filesystem\Filesystem;
@@ -81,6 +82,44 @@ final readonly class ImageService
         }
 
         return $images;
+    }
+
+    public function importRemoteImage(string $url, int $userId, ?string $copyright = null, int $sort = 1): ?Image
+    {
+        try {
+            $response = Http::timeout(15)
+                ->withHeaders([
+                    'User-Agent' => 'BarAssistant/LocalDev Image Importer',
+                    'Accept' => 'image/*,*/*;q=0.8',
+                    'Referer' => $url,
+                ])
+                ->get($url)
+                ->throw();
+        } catch (Throwable $e) {
+            $this->log->error('[IMAGE_SERVICE] Remote image download failed | ' . $e->getMessage());
+
+            return null;
+        }
+
+        $images = $this->uploadAndSaveImages([
+            new ImageRequest(
+                image: $response->body(),
+                copyright: $copyright,
+                sort: $sort,
+            ),
+        ], $userId);
+
+        if (isset($images[0])) {
+            return $images[0];
+        }
+
+        return $this->storeRemoteImageWithoutProcessing(
+            imageContents: $response->body(),
+            contentType: $response->header('Content-Type'),
+            userId: $userId,
+            copyright: $copyright,
+            sort: $sort,
+        );
     }
 
     public function updateImage(int $imageId, ImageRequest $imageDTO, int $userId): Image
@@ -175,5 +214,35 @@ final readonly class ImageService
         }
 
         return [$filepath, $fileExtension, $thumbHash];
+    }
+
+    private function storeRemoteImageWithoutProcessing(string $imageContents, ?string $contentType, int $userId, ?string $copyright, int $sort): ?Image
+    {
+        try {
+            $extension = match (true) {
+                is_string($contentType) && str_contains($contentType, 'png') => 'png',
+                is_string($contentType) && str_contains($contentType, 'jpeg') => 'jpg',
+                is_string($contentType) && str_contains($contentType, 'webp') => 'webp',
+                default => 'img',
+            };
+
+            $filepath = 'temp/' . Str::random(40) . '.' . $extension;
+            $this->filesystem->put($filepath, $imageContents);
+
+            $image = new Image();
+            $image->copyright = $copyright;
+            $image->file_path = $filepath;
+            $image->file_extension = $extension;
+            $image->created_user_id = $userId;
+            $image->sort = $sort;
+            $image->placeholder_hash = null;
+            $image->save();
+
+            return $image;
+        } catch (Throwable $e) {
+            $this->log->error('[IMAGE_SERVICE] Remote image fallback store failed | ' . $e->getMessage());
+
+            return null;
+        }
     }
 }

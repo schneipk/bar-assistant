@@ -168,6 +168,14 @@ class Ingredient extends Model implements UploadableInterface, IsExternalized
     }
 
     /**
+     * @return HasMany<IngredientPriceSuggestion, $this>
+     */
+    public function priceSuggestions(): HasMany
+    {
+        return $this->hasMany(IngredientPriceSuggestion::class);
+    }
+
+    /**
      * @return Collection<int, Cocktail>
      */
     public function cocktailsAsSubstituteIngredient(): Collection

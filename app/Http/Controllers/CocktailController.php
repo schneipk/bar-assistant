@@ -481,7 +481,14 @@ class CocktailController extends Controller
         $cocktail = Cocktail::where('slug', $idOrSlug)
             ->orWhere('id', $idOrSlug)
             ->firstOrFail()
-            ->load(['ingredients.ingredient.prices.priceCategory']);
+            ->load([
+                'ingredients.ingredient.prices.priceCategory',
+                'ingredients.ingredient.children.prices.priceCategory',
+                'ingredients.ingredient.bar.shelfIngredients',
+                'ingredients.ingredient.children.bar.shelfIngredients',
+                'ingredients.substitutes.ingredient.prices.priceCategory',
+                'ingredients.substitutes.ingredient.bar.shelfIngredients',
+            ]);
 
         if ($request->user()->cannot('show', $cocktail)) {
             abort(403);

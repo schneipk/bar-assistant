@@ -149,18 +149,16 @@ final readonly class IngredientService
             $ingredient->ingredientParts()->whereNotIn('ingredient_id', $currentIngredientParts)->delete();
             Model::reguard();
 
-            if (count($dto->prices) > 0) {
-                $ingredient->prices()->delete();
-                foreach ($dto->prices as $ingredientPriceDto) {
-                    $price = new IngredientPrice();
-                    $price->ingredient_id = $ingredient->id;
-                    $price->price_category_id = $ingredientPriceDto->priceCategoryId;
-                    $price->price = $ingredientPriceDto->price;
-                    $price->amount = $ingredientPriceDto->amount;
-                    $price->units = $ingredientPriceDto->units;
-                    $price->description = $ingredientPriceDto->description;
-                    $price->save();
-                }
+            $ingredient->prices()->delete();
+            foreach ($dto->prices as $ingredientPriceDto) {
+                $price = new IngredientPrice();
+                $price->ingredient_id = $ingredient->id;
+                $price->price_category_id = $ingredientPriceDto->priceCategoryId;
+                $price->price = $ingredientPriceDto->price;
+                $price->amount = $ingredientPriceDto->amount;
+                $price->units = $ingredientPriceDto->units;
+                $price->description = $ingredientPriceDto->description;
+                $price->save();
             }
 
         } catch (Throwable $e) {

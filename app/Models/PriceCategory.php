@@ -18,6 +18,11 @@ class PriceCategory extends Model
 
     public $timestamps = false;
 
+    protected $casts = [
+        'is_base_category' => 'boolean',
+        'suggestion_config' => 'array',
+    ];
+
     public function getCurrency(): Currency
     {
         return Currency::of($this->currency);

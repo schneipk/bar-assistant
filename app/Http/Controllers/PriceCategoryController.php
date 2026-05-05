@@ -72,6 +72,9 @@ class PriceCategoryController extends Controller
         $priceCategory->name = $request->input('name');
         $priceCategory->description = $request->input('description');
         $priceCategory->currency = $request->input('currency');
+        $priceCategory->is_base_category = $request->boolean('is_base_category');
+        $priceCategory->suggestion_provider = $request->input('suggestion_provider');
+        $priceCategory->suggestion_config = $request->input('suggestion_config');
         $priceCategory->bar_id = bar()->id;
         $priceCategory->save();
 
@@ -105,6 +108,9 @@ class PriceCategoryController extends Controller
         $priceCategory->name = $request->input('name');
         $priceCategory->description = $request->input('description');
         $priceCategory->currency = $request->input('currency');
+        $priceCategory->is_base_category = $request->boolean('is_base_category');
+        $priceCategory->suggestion_provider = $request->input('suggestion_provider');
+        $priceCategory->suggestion_config = $request->input('suggestion_config');
         $priceCategory->save();
 
         return new PriceCategoryResource($priceCategory);

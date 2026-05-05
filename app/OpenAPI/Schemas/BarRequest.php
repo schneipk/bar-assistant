@@ -27,6 +27,8 @@ class BarRequest
     public ?string $defaultUnits = null;
     #[OAT\Property(property: 'default_currency', example: 'EUR', description: 'ISO 4217 format of currency. Used only as a setting for client apps.')]
     public ?string $defaultCurrency = null;
+    #[OAT\Property(property: 'target_pour_cost', example: 22, type: 'number', format: 'float', description: 'Desired ingredient cost percentage of the cocktail selling price, used by the cocktail price calculator.')]
+    public ?float $targetPourCost = null;
     #[OAT\Property(property: 'enable_invites', description: 'Enable users with invite code to join this bar. Default `false`.')]
     public bool $invitesEnabled = false;
     #[OAT\Property(description: 'List of data that the bar will start with. Cocktails cannot be imported without ingredients.')]
@@ -61,6 +63,10 @@ class BarRequest
             $result->defaultCurrency = $defaultCurrency;
         }
 
+        if ($request->filled('target_pour_cost')) {
+            $result->targetPourCost = (float) $request->input('target_pour_cost');
+        }
+
         $result->images = array_map(intval(...), $request->input('images', []));
 
         return $result;
@@ -92,6 +98,9 @@ class BarRequest
         }
         if ($this->defaultCurrency) {
             $settings['default_currency'] = $this->defaultCurrency;
+        }
+        if ($this->targetPourCost !== null) {
+            $settings['target_pour_cost'] = $this->targetPourCost;
         }
         $bar->settings = $settings;
 

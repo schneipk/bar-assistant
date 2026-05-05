@@ -21,8 +21,10 @@ use Illuminate\Http\Resources\Json\JsonResource;
         new OAT\Property(property: 'missing_prices_count', type: 'integer', example: 2, description: 'Number of ingredients that are missing defined prices in this category'),
         new OAT\Property(property: 'price_category', type: PriceCategoryResource::class),
         new OAT\Property(property: 'total_price', type: PriceResource::class, description: 'Total cocktail price, sum of `price_per_pour` amounts'),
-        new OAT\Property(property: 'prices_per_ingredient', type: 'array', items: new OAT\Items(type: 'object', required: ['ingredient', 'price_per_unit', 'price_per_use', 'units'], properties: [
+        new OAT\Property(property: 'prices_per_ingredient', type: 'array', items: new OAT\Items(type: 'object', required: ['ingredient', 'priced_ingredient', 'price_source', 'price_per_unit', 'price_per_use', 'units'], properties: [
             new OAT\Property(property: 'ingredient', type: IngredientBasicResource::class),
+            new OAT\Property(property: 'priced_ingredient', type: IngredientBasicResource::class, description: 'Ingredient actually used for price resolution'),
+            new OAT\Property(property: 'price_source', type: 'string', example: 'variant', description: 'How the price was resolved (`original`, `base_category`, `variant`, `variant_base_category`, `substitute`, `substitute_base_category`)'),
             new OAT\Property(property: 'units', type: 'string', description: 'Units used for price calculation'),
             new OAT\Property(property: 'price_per_unit', type: PriceResource::class, description: 'Price per 1 unit of ingredient amount'),
             new OAT\Property(property: 'price_per_use', type: PriceResource::class, description: 'Price per cocktail ingredient part'),
@@ -42,15 +44,17 @@ class CocktailPriceResource extends JsonResource
     public function toArray($request)
     {
         $prices = $this->cocktail->ingredients->map(function (CocktailIngredient $cocktailIngredient) {
-            $minIngredientPrice = $cocktailIngredient->getMinConvertedPriceInCategory($this->priceCategory);
-            if ($minIngredientPrice === null) {
+            $resolvedPrice = $cocktailIngredient->resolvePrice($this->priceCategory);
+            if ($resolvedPrice === null) {
                 return null;
             }
 
             return [
-                'units' => $minIngredientPrice->getAmount()->units,
+                'units' => $resolvedPrice->ingredientPrice->getAmount()->units,
                 'ingredient' => new IngredientBasicResource($cocktailIngredient->ingredient),
-                'price_per_unit' => new PriceResource(new Price($minIngredientPrice->getPricePerUnit($cocktailIngredient->units)->to(new DefaultContext(), RoundingMode::DOWN))),
+                'priced_ingredient' => new IngredientBasicResource($resolvedPrice->ingredient),
+                'price_source' => $resolvedPrice->source,
+                'price_per_unit' => new PriceResource(new Price($resolvedPrice->ingredientPrice->getPricePerUnit($resolvedPrice->amount->units->value)->to(new DefaultContext(), RoundingMode::DOWN))),
                 'price_per_use' => new PriceResource(new Price($cocktailIngredient->getConvertedPricePerUse($this->priceCategory)->to(new DefaultContext(), RoundingMode::DOWN))),
             ];
         })->filter()->values();
